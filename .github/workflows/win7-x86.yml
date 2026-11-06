@@ -1,0 +1,43 @@
+name: Windows 7 x86 build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - win7-x86
+
+jobs:
+  win7x86:
+    runs-on: windows-latest
+    name: Windows x86 (self-contained, net6.0)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # net6.0 is the last .NET version that supports Windows 7 SP1
+      - name: Setup .NET 6
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '6.0.x'
+
+      - name: Publish win-x86 (self-contained)
+        shell: pwsh
+        run: ./eng/windows/package.ps1 -output dist -netRuntime win-x86 -selfContained $true -singleFile $false -isRelease $true -isPackage $true
+
+      - name: Verify binaries are 32-bit
+        shell: pwsh
+        run: |
+          foreach ($name in "OpenTabletDriver.Daemon.exe", "OpenTabletDriver.Console.exe", "OpenTabletDriver.UX.Wpf.exe") {
+            $path = Join-Path dist $name
+            $bytes = [System.IO.File]::ReadAllBytes($path)
+            $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
+            $machine = [BitConverter]::ToUInt16($bytes, $peOffset + 4)
+            if ($machine -ne 0x14c) { throw "$name is not x86 (machine=0x{0:x})" -f $machine }
+            Write-Output "$name : x86 OK"
+          }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenTabletDriver win-x86 (Windows 7 compatible)
+          path: dist/OpenTabletDriver-win-x86.zip
